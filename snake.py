@@ -35,6 +35,8 @@ def enable_ansi():
 def play():
     import msvcrt
 
+    out = sys.stdout.write
+    flush = sys.stdout.flush
     arrows = {72: "w", 80: "s", 75: "a", 77: "d"}
 
     def read_key():
@@ -51,40 +53,21 @@ def play():
                 continue
         return None
 
-    enable_ansi()
-    term_h, term_w = shutil.get_terminal_size((24, 80))
-    # Compact board — full terminal height makes the snake impossible to see
-    height = min(max(term_h - 3, 15), 20)
-    width = min(max(term_w - 4, 40), 56)
+    def enter_screen():
+        out("\033[?1049h\033[?25l")
+        flush()
 
-    snake = deque([(height // 2, width // 2)])
-    direction = "d"
-    food = random_food(height, width, snake)
-    score = 0
-    pending = None
+    def leave_screen():
+        out("\033[?1049l\033[?25h")
+        flush()
 
-    while True:
-        key = read_key() or pending
-        pending = None
-        if key == "q":
-            break
-        if key in DIRS and key != OPPOSITE[direction]:
-            direction = key
+    def put(y, x, ch):
+        out(f"\033[{y + 2};{x + 1}H{ch}")
 
-        dy, dx = DIRS[direction]
-        y, x = snake[0]
-        head = (y + dy, x + dx)
+    def hud(score):
+        out(f"\033[1;1H Score: {score}   WASD / arrows to move   q to quit\033[K")
 
-        if not (0 < head[0] < height - 1 and 0 < head[1] < width - 1) or head in snake:
-            break
-
-        snake.appendleft(head)
-        if head == food:
-            score += 1
-            food = random_food(height, width, snake)
-        else:
-            snake.pop()
-
+    def draw_border(height, width):
         grid = [[" "] * width for _ in range(height)]
         for r in range(height):
             grid[r][0] = grid[r][width - 1] = "|"
@@ -92,32 +75,74 @@ def play():
             grid[0][c] = grid[height - 1][c] = "-"
         for y, x in ((0, 0), (0, width - 1), (height - 1, 0), (height - 1, width - 1)):
             grid[y][x] = "+"
-        fy, fx = food
-        grid[fy][fx] = "*"
-        for sy, sx in snake:
-            grid[sy][sx] = "#"
+        out("\033[1;1H Score: 0   WASD / arrows to move   q to quit\n")
+        out("\n".join("".join(row) for row in grid))
+        flush()
 
-        print("\033[H\033[J", end="")
-        print(f" Score: {score}   WASD / arrows to move   q to quit")
-        print("\n".join("".join(row) for row in grid))
+    enable_ansi()
+    term_h, term_w = shutil.get_terminal_size((24, 80))
+    height = min(max(term_h - 3, 15), 20)
+    width = min(max(term_w - 4, 40), 56)
 
-        deadline = time.monotonic() + 0.12
-        while time.monotonic() < deadline:
-            key = read_key()
+    enter_screen()
+    draw_border(height, width)
+
+    snake = deque([(height // 2, width // 2)])
+    direction = "d"
+    food = random_food(height, width, snake)
+    score = 0
+    pending = None
+
+    for sy, sx in snake:
+        put(sy, sx, "#")
+    put(food[0], food[1], "*")
+    flush()
+
+    try:
+        while True:
+            key = read_key() or pending
+            pending = None
             if key == "q":
-                print("\033[H\033[J", end="")
                 return
             if key in DIRS and key != OPPOSITE[direction]:
-                pending = key
-                break
-            time.sleep(0.01)
-    else:
-        return
+                direction = key
 
-    print("\033[H\033[J", end="")
-    print(f"GAME OVER — score: {score}")
-    print("Press any key to exit...")
-    msvcrt.getch()
+            dy, dx = DIRS[direction]
+            y, x = snake[0]
+            head = (y + dy, x + dx)
+
+            if not (0 < head[0] < height - 1 and 0 < head[1] < width - 1) or head in snake:
+                break
+
+            tail = snake[-1]
+            snake.appendleft(head)
+            put(head[0], head[1], "#")
+            if head == food:
+                score += 1
+                food = random_food(height, width, snake)
+                put(food[0], food[1], "*")
+            else:
+                snake.pop()
+                put(tail[0], tail[1], " ")
+
+            hud(score)
+            flush()
+
+            deadline = time.monotonic() + 0.12
+            while time.monotonic() < deadline:
+                key = read_key()
+                if key == "q":
+                    return
+                if key in DIRS and key != OPPOSITE[direction]:
+                    pending = key
+                    break
+                time.sleep(0.01)
+
+        print(f"GAME OVER — score: {score}")
+        print("Press any key to exit...")
+        msvcrt.getch()
+    finally:
+        leave_screen()
 
 
 if __name__ == "__main__":

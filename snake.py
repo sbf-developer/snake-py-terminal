@@ -24,10 +24,38 @@ def enable_ansi():
         return
     try:
         import ctypes
+
         stdout = ctypes.windll.kernel32.GetStdHandle(-11)
         mode = ctypes.c_ulong()
         ctypes.windll.kernel32.GetConsoleMode(stdout, ctypes.byref(mode))
         ctypes.windll.kernel32.SetConsoleMode(stdout, mode.value | 4)
+
+        class CursorInfo(ctypes.Structure):
+            _fields_ = [("size", ctypes.c_uint), ("visible", ctypes.c_bool)]
+
+        info = CursorInfo()
+        ctypes.windll.kernel32.GetConsoleCursorInfo(stdout, ctypes.byref(info))
+        info.visible = False
+        ctypes.windll.kernel32.SetConsoleCursorInfo(stdout, ctypes.byref(info))
+    except Exception:
+        pass
+
+
+def show_cursor():
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        stdout = ctypes.windll.kernel32.GetStdHandle(-11)
+
+        class CursorInfo(ctypes.Structure):
+            _fields_ = [("size", ctypes.c_uint), ("visible", ctypes.c_bool)]
+
+        info = CursorInfo()
+        ctypes.windll.kernel32.GetConsoleCursorInfo(stdout, ctypes.byref(info))
+        info.visible = True
+        ctypes.windll.kernel32.SetConsoleCursorInfo(stdout, ctypes.byref(info))
     except Exception:
         pass
 
@@ -59,10 +87,14 @@ def play():
 
     def leave_screen():
         out("\033[?1049l\033[?25h")
+        show_cursor()
         flush()
 
     def put(y, x, ch):
         out(f"\033[{y + 2};{x + 1}H{ch}")
+
+    def park_cursor(height):
+        out(f"\033[{height + 3};1H")
 
     def hud(score):
         out(f"\033[1;1H Score: {score}   WASD / arrows to move   q to quit\033[K")
@@ -96,6 +128,7 @@ def play():
     for sy, sx in snake:
         put(sy, sx, "#")
     put(food[0], food[1], "*")
+    park_cursor(height)
     flush()
 
     try:
@@ -126,6 +159,7 @@ def play():
                 put(tail[0], tail[1], " ")
 
             hud(score)
+            park_cursor(height)
             flush()
 
             deadline = time.monotonic() + 0.12
